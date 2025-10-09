@@ -1,9 +1,12 @@
-name: Proxy Scanner
+name: 👌 Proxy Scanner
 
 on:
   workflow_dispatch:
   schedule:
     - cron: "0 */6 * * *" # setiap 6 jam
+
+permissions:
+  contents: write
 
 jobs:
   scanner:
@@ -20,10 +23,11 @@ jobs:
       - name: Use Bun
         uses: oven-sh/setup-bun@v2
 
+      - name: Install Dependencies
+        run: bun install
+
       - name: Start Scan
-        run: |
-          bun install
-          bun run ./BACKEND/scanner.ts
+        run: bun run ./BACKEND/scanner.ts
 
       - name: Publish Result
         if: ${{ success() }}
@@ -32,8 +36,8 @@ jobs:
           git config --global user.email "actions@github.com"
           git add .
           if git diff --cached --quiet; then
-            echo "TIDAK ADA UPDATE $(date '+%Y-%m-%d %H:%M:%S') "
+            echo "✅ TIDAK ADA UPDATE $(date '+%Y-%m-%d %H:%M:%S')"
           else
-            git commit -m "UPDATE PROXY $(date '+%Y-%m-%d %H:%M:%S')"
-            git push origin main --force
+            git commit -m "🚀 UPDATE PROXY $(date '+%Y-%m-%d %H:%M:%S')"
+            git push origin main
           fi
