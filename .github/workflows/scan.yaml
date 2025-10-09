@@ -26,6 +26,7 @@ jobs:
       - name: Prepare Workspace
         run: |
           mkdir -p RESULT
+          mkdir -p RESULT/country
           echo -e "node_modules\nbun.lockb\n.env\n.DS_Store\n*.log\n.vscode/" > .gitignore
 
       - name: Install Dependencies
