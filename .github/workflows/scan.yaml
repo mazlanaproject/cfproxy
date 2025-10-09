@@ -23,18 +23,28 @@ jobs:
       - name: Use Bun
         uses: oven-sh/setup-bun@v2
 
+      - name: Prepare Workspace
+        run: |
+          mkdir -p RESULT
+          echo -e "node_modules\nbun.lockb\n.env\n.DS_Store\n*.log\n.vscode/" > .gitignore
+
       - name: Install Dependencies
         run: bun install
 
       - name: Start Scan
-        run: bun run ./BACKEND/scanner.ts
+        run: |
+          echo "🚀 Memulai scan proxy pada $(date)"
+          bun run ./BACKEND/scanner.ts
 
       - name: Publish Result
         if: ${{ success() }}
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
-          git add .
+          
+          # hanya commit hasil scan
+          git add RESULT/
+          
           if git diff --cached --quiet; then
             echo "✅ TIDAK ADA UPDATE $(date '+%Y-%m-%d %H:%M:%S')"
           else
