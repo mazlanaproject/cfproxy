@@ -1,5 +1,7 @@
 import tls from "tls";
-import { mkdir, write, file } from "bun";
+import { write, file } from "bun";
+import { mkdir } from "fs/promises";
+
 
 interface ProxyStruct {
   address: string;
