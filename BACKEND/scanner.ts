@@ -1,4 +1,5 @@
 import tls from "tls";
+import { mkdir, write, file } from "bun";
 
 interface ProxyStruct {
   address: string;
@@ -21,230 +22,188 @@ interface ProxyTestResult {
   };
 }
 
-let myGeoIpString: any = null;
+let myGeoIpString: string | null = null;
 
-const KV_PAIR_PROXY_FILE = "./RESULT/proxy.json";
-const RAW_PROXY_LIST_FILE = "./SOURCE/proxy.txt";
-const PROXY_LIST_FILE = "./RESULT/ALL/proxy.txt";
-const countryDir = "./RESULT/country";
+const SOURCE_FILE = "./SOURCE/proxy.txt";
+const RESULT_DIR = "./RESULT";
+const RESULT_ALL = `${RESULT_DIR}/ALL/proxy.txt`;
+const RESULT_JSON = `${RESULT_DIR}/proxy.json`;
+const COUNTRY_DIR = `${RESULT_DIR}/country`;
+
 const IP_RESOLVER_DOMAIN = "myip.ipeek.workers.dev";
 const IP_RESOLVER_PATH = "/";
 const CONCURRENCY = 99;
 
 const CHECK_QUEUE: string[] = [];
 
+// === Utility: progress bar ===
+function showProgress(current: number, total: number) {
+  const percent = (current / total) * 100;
+  const filled = Math.round((percent / 100) * 25);
+  const bar = "█".repeat(filled) + "░".repeat(25 - filled);
+  process.stdout.write(`\r🔍 Scanning [${bar}] ${percent.toFixed(1)}% (${current}/${total})`);
+  if (current === total) process.stdout.write("\n");
+}
+
+// === TLS Request ===
 async function sendRequest(host: string, path: string, proxy: any = null) {
-  return new Promise((resolve, reject) => {
-    const options = {
-      host: proxy ? proxy.host : host,
-      port: proxy ? proxy.port : 443,
-      servername: host,
-    };
+  return new Promise<string>((resolve, reject) => {
+    const socket = tls.connect(
+      { host: proxy ? proxy.host : host, port: proxy ? proxy.port : 443, servername: host },
+      () => {
+        socket.write(`GET ${path} HTTP/1.1\r\nHost: ${host}\r\nUser-Agent: Mozilla\r\nConnection: close\r\n\r\n`);
+      },
+    );
 
-    const socket = tls.connect(options, () => {
-      const request =
-        `GET ${path} HTTP/1.1\r\n` + `Host: ${host}\r\n` + `User-Agent: Mozilla/5.0\r\n` + `Connection: close\r\n\r\n`;
-      socket.write(request);
-    });
-
-    let responseBody = "";
-
+    let response = "";
     const timeout = setTimeout(() => {
       socket.destroy();
-      reject(new Error("socket timeout"));
+      reject(new Error("timeout"));
     }, 5000);
 
-    socket.on("data", (data) => (responseBody += data.toString()));
+    socket.on("data", (d) => (response += d.toString()));
     socket.on("end", () => {
       clearTimeout(timeout);
-      const body = responseBody.split("\r\n\r\n")[1] || "";
-      resolve(body);
+      resolve(response.split("\r\n\r\n")[1] || "");
     });
-    socket.on("error", (error) => {
-      // console.log(error);
-      reject(error);
-    });
+    socket.on("error", reject);
   });
 }
 
-export async function checkProxy(proxyAddress: string, proxyPort: number): Promise<ProxyTestResult> {
-  let result: ProxyTestResult = {
-    message: "Unknown error",
-    error: true,
-  };
-
-  const proxyInfo = { host: proxyAddress, port: proxyPort };
+// === Cek proxy ===
+async function checkProxy(address: string, port: number): Promise<ProxyTestResult> {
+  let result: ProxyTestResult = { error: true, message: "Unknown" };
 
   try {
-    const start = new Date().getTime();
-    const [ipinfo, myip] = await Promise.all([
-      sendRequest(IP_RESOLVER_DOMAIN, IP_RESOLVER_PATH, proxyInfo),
-      myGeoIpString == null ? sendRequest(IP_RESOLVER_DOMAIN, IP_RESOLVER_PATH, null) : myGeoIpString,
+    const start = Date.now();
+    const [ipinfo, myipRaw] = await Promise.all([
+      sendRequest(IP_RESOLVER_DOMAIN, IP_RESOLVER_PATH, { host: address, port }),
+      myGeoIpString == null ? sendRequest(IP_RESOLVER_DOMAIN, IP_RESOLVER_PATH) : Promise.resolve(myGeoIpString),
     ]);
-    const finish = new Date().getTime();
+    const end = Date.now();
 
-    // Save local geoip
-    if (myGeoIpString == null) myGeoIpString = myip;
+    if (myGeoIpString == null) myGeoIpString = myipRaw;
 
-    const parsedIpInfo = JSON.parse(ipinfo as string);
-    const parsedMyIp = JSON.parse(myip as string);
+    const parsedIpInfo = JSON.parse(ipinfo);
+    const parsedMyIp = JSON.parse(myGeoIpString);
 
     if (parsedIpInfo.ip && parsedIpInfo.ip !== parsedMyIp.ip) {
       result = {
         error: false,
         result: {
-          proxy: proxyAddress,
-          port: proxyPort,
+          proxy: address,
+          port,
           proxyip: true,
-          delay: finish - start,
+          delay: end - start,
           ...parsedIpInfo,
         },
       };
     }
-  } catch (error: any) {
-    result.message = error.message;
+  } catch (e: any) {
+    result.message = e.message;
   }
 
   return result;
 }
 
-// async function checkProxy(proxyAddress: string, proxyPort: number): Promise<ProxyTestResult> {
-//   const controller = new AbortController();
-//   setTimeout(() => controller.abort(), 5000);
-
-//   try {
-//     const res = await Bun.fetch(IP_RESOLVER_DOMAIN + `?ip=${proxyAddress}:${proxyPort}`, {
-//       signal: controller.signal,
-//     });
-
-//     if (res.status == 200) {
-//       return {
-//         error: false,
-//         result: await res.json(),
-//       };
-//     } else {
-//       throw new Error(res.statusText);
-//     }
-//   } catch (e: any) {
-//     return {
-//       error: true,
-//       message: e.message,
-//     };
-//   }
-// }
-
+// === Baca daftar proxy dari SOURCE ===
 async function readProxyList(): Promise<ProxyStruct[]> {
   const proxyList: ProxyStruct[] = [];
+  const text = await file(SOURCE_FILE).text();
+  const lines = text.split("\n").filter(Boolean);
 
-  const proxyListString = (await Bun.file(RAW_PROXY_LIST_FILE).text()).split("\n");
-  for (const proxy of proxyListString) {
-    const [address, port, country, org] = proxy.split(",");
-    proxyList.push({
-      address,
-      port: parseInt(port),
-      country,
-      org,
-    });
+  for (const line of lines) {
+    const [address, port, country, org] = line.split(",");
+    if (!address || !port) continue;
+    proxyList.push({ address, port: parseInt(port), country, org });
   }
 
   return proxyList;
 }
 
+// === Sort helper ===
+function sortByCountry(a: string, b: string) {
+  const ca = a.split(",")[2];
+  const cb = b.split(",")[2];
+  return ca.localeCompare(cb);
+}
+
+// === MAIN ===
 (async () => {
+  await mkdir(`${RESULT_DIR}/ALL`, { recursive: true });
+  await mkdir(COUNTRY_DIR, { recursive: true });
+
   const proxyList = await readProxyList();
   const proxyChecked: string[] = [];
-  const uniqueRawProxies: string[] = [];
-  const activeProxyList: string[] = [];
-  const kvPair: any = {};
+  const uniqueRaw: string[] = [];
+  const activeList: string[] = [];
+  const kvPair: Record<string, string[]> = {};
 
   let proxySaved = 0;
 
   for (let i = 0; i < proxyList.length; i++) {
     const proxy = proxyList[i];
     const proxyKey = `${proxy.address}:${proxy.port}`;
-    if (!proxyChecked.includes(proxyKey)) {
-      proxyChecked.push(proxyKey);
-      try {
-        uniqueRawProxies.push(`${proxy.address},${proxy.port},${proxy.country},${proxy.org.replaceAll(/[+]/g, " ")}`);
-      } catch (e: any) {
-        continue;
-      }
-    } else {
-      continue;
-    }
+
+    // progress update
+    showProgress(i + 1, proxyList.length);
+
+    if (proxyChecked.includes(proxyKey)) continue;
+    proxyChecked.push(proxyKey);
+
+    uniqueRaw.push(`${proxy.address},${proxy.port},${proxy.country},${proxy.org?.replace(/\+/g, " ")}`);
 
     CHECK_QUEUE.push(proxyKey);
     checkProxy(proxy.address, proxy.port)
       .then((res) => {
         if (!res.error && res.result?.proxyip === true && res.result.country) {
-          activeProxyList.push(
-            `${res.result?.proxy},${res.result?.port},${res.result?.country},${res.result?.asOrganization}`
-          );
+          activeList.push(`${res.result.proxy},${res.result.port},${res.result.country},${res.result.asOrganization}`);
 
-          if (kvPair[res.result.country] == undefined) kvPair[res.result.country] = [];
+          if (!kvPair[res.result.country]) kvPair[res.result.country] = [];
           if (kvPair[res.result.country].length < 10) {
             kvPair[res.result.country].push(`${res.result.proxy}:${res.result.port}`);
           }
 
-          proxySaved += 1;
-          console.log(`[${i}/${proxyList.length}] Proxy disimpan:`, proxySaved);
+          proxySaved++;
         }
       })
-      .finally(() => {
-        CHECK_QUEUE.pop();
-      });
+      .finally(() => CHECK_QUEUE.pop());
 
-    while (CHECK_QUEUE.length >= CONCURRENCY) {
-      await Bun.sleep(1);
-    }
+    while (CHECK_QUEUE.length >= CONCURRENCY) await Bun.sleep(10);
   }
 
-  // Waiting for all process to be completed
-  while (CHECK_QUEUE.length) {
-    await Bun.sleep(1);
+  // Tunggu semua selesai
+  while (CHECK_QUEUE.length) await Bun.sleep(10);
+
+  // Sort hasil
+  uniqueRaw.sort(sortByCountry);
+  activeList.sort(sortByCountry);
+
+  // Simpan hasil utama
+  await write(RESULT_JSON, JSON.stringify(kvPair, null, 2));
+  await write(SOURCE_FILE, uniqueRaw.join("\n"));
+  await write(RESULT_ALL, activeList.join("\n"));
+
+  console.log(`\n📦 Total proxy aktif: ${proxySaved}`);
+
+  // === Pisah per negara ===
+  const allData = await file(RESULT_ALL).text();
+  const countryMap: Record<string, string[]> = {};
+
+  for (const line of allData.split("\n")) {
+    if (!line.trim()) continue;
+    const parts = line.split(",");
+    const country = parts[2]?.trim();
+    if (!country) continue;
+    if (!countryMap[country]) countryMap[country] = [];
+    countryMap[country].push(line);
   }
 
-  uniqueRawProxies.sort(sortByCountry);
-  activeProxyList.sort(sortByCountry);
+  for (const [country, lines] of Object.entries(countryMap)) {
+    const filePath = `${COUNTRY_DIR}/${country}.txt`;
+    await write(filePath, lines.join("\n"));
+  }
 
-  await Bun.write(KV_PAIR_PROXY_FILE, JSON.stringify(kvPair, null, "  "));
-  await Bun.write(RAW_PROXY_LIST_FILE, uniqueRawProxies.join("\n"));
-  await Bun.write(PROXY_LIST_FILE, activeProxyList.join("\n"));
-  // === Pisahkan proxy per negara ===
-
-await Bun.mkdir(countryDir, { recursive: true });
-
-const countryMap: Record<string, string[]> = {};
-
-// Baca ulang isi file ALL
-const allData = await Bun.file(PROXY_LIST_FILE).text();
-for (const line of allData.split("\n")) {
-  if (!line.trim()) continue;
-  const parts = line.split(",");
-  const country = parts[2]?.trim();
-  if (!country) continue;
-
-  if (!countryMap[country]) countryMap[country] = [];
-  countryMap[country].push(line);
-}
-
-// Tulis hasil ke masing-masing negara
-for (const [country, lines] of Object.entries(countryMap)) {
-  const filePath = `${countryDir}/${country}.txt`;
-  await Bun.write(filePath, lines.join("\n"));
-  console.log(`📁 Saved ${country}: ${lines.length} proxies`);
-}
-
-console.log(`✅ Semua proxy berhasil dipisah ke folder ${countryDir}`);
-
-
-  console.log(`Waktu proses: ${(Bun.nanoseconds() / 1000000000).toFixed(2)} detik`);
-  process.exit(0);
+  console.log(`✅ Proxy berhasil dipisah ke folder ${COUNTRY_DIR}`);
+  console.log(`🕒 Proses selesai dalam ${(Bun.nanoseconds() / 1e9).toFixed(2)} detik\n`);
 })();
-
-function sortByCountry(a: string, b: string) {
-  a = a.split(",")[2];
-  b = b.split(",")[2];
-
-  return a.localeCompare(b);
-}
