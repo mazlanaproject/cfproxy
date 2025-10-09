@@ -37,15 +37,21 @@ const IP_RESOLVER_PATH = "/";
 const CONCURRENCY = 99;
 
 const CHECK_QUEUE: string[] = [];
+let lastPercentShown = 0;
 
-// === Utility: progress bar ===
 function showProgress(current: number, total: number) {
   const percent = (current / total) * 100;
-  const filled = Math.round((percent / 100) * 25);
-  const bar = "█".repeat(filled) + "░".repeat(25 - filled);
-  process.stdout.write(`\r🔍 Scanning [${bar}] ${percent.toFixed(1)}% (${current}/${total})`);
-  if (current === total) process.stdout.write("\n");
+  const rounded = Math.floor(percent);
+
+  // hanya update setiap 2% atau di akhir
+  if (rounded >= lastPercentShown + 2 || current === total) {
+    lastPercentShown = rounded;
+    const filled = Math.round((percent / 100) * 25);
+    const bar = "█".repeat(filled) + "░".repeat(25 - filled);
+    console.log(`🔍 Scanning [${bar}] ${percent.toFixed(1)}% (${current}/${total})`);
+  }
 }
+
 
 // === TLS Request ===
 async function sendRequest(host: string, path: string, proxy: any = null) {
