@@ -26,6 +26,7 @@ let myGeoIpString: any = null;
 const KV_PAIR_PROXY_FILE = "./RESULT/proxy.json";
 const RAW_PROXY_LIST_FILE = "./SOURCE/proxy.txt";
 const PROXY_LIST_FILE = "./RESULT/ALL/proxy.txt";
+const countryDir = "./RESULT/country";
 const IP_RESOLVER_DOMAIN = "myip.ipeek.workers.dev";
 const IP_RESOLVER_PATH = "/";
 const CONCURRENCY = 99;
@@ -209,6 +210,33 @@ async function readProxyList(): Promise<ProxyStruct[]> {
   await Bun.write(KV_PAIR_PROXY_FILE, JSON.stringify(kvPair, null, "  "));
   await Bun.write(RAW_PROXY_LIST_FILE, uniqueRawProxies.join("\n"));
   await Bun.write(PROXY_LIST_FILE, activeProxyList.join("\n"));
+  // === Pisahkan proxy per negara ===
+
+await Bun.mkdir(countryDir, { recursive: true });
+
+const countryMap: Record<string, string[]> = {};
+
+// Baca ulang isi file ALL
+const allData = await Bun.file(PROXY_LIST_FILE).text();
+for (const line of allData.split("\n")) {
+  if (!line.trim()) continue;
+  const parts = line.split(",");
+  const country = parts[2]?.trim();
+  if (!country) continue;
+
+  if (!countryMap[country]) countryMap[country] = [];
+  countryMap[country].push(line);
+}
+
+// Tulis hasil ke masing-masing negara
+for (const [country, lines] of Object.entries(countryMap)) {
+  const filePath = `${countryDir}/${country}.txt`;
+  await Bun.write(filePath, lines.join("\n"));
+  console.log(`📁 Saved ${country}: ${lines.length} proxies`);
+}
+
+console.log(`✅ Semua proxy berhasil dipisah ke folder ${countryDir}`);
+
 
   console.log(`Waktu proses: ${(Bun.nanoseconds() / 1000000000).toFixed(2)} detik`);
   process.exit(0);
