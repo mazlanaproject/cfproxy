@@ -1,0 +1,39 @@
+name: Proxy Scanner
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */6 * * *" # setiap 6 jam
+
+jobs:
+  scanner:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: proxy-scan
+      cancel-in-progress: true
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Use Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Start Scan
+        run: |
+          bun install
+          bun run ./BACKEND/scanner.ts
+
+      - name: Publish Result
+        if: ${{ success() }}
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git add .
+          if git diff --cached --quiet; then
+            echo "TIDAK ADA UPDATE $(date '+%Y-%m-%d %H:%M:%S') "
+          else
+            git commit -m "UPDATE PROXY $(date '+%Y-%m-%d %H:%M:%S')"
+            git push origin main --force
+          fi
