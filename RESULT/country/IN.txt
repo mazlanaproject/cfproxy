@@ -1,14 +1,14 @@
 172.232.112.240,587,IN,Linode
+65.20.82.22,443,IN,Vultr Holdings LLC
 148.113.43.228,2053,IN,OVHTECH R&D (INDIA) PRIVATE LIMITED
 148.113.43.228,8443,IN,OVHTECH R&D (INDIA) PRIVATE LIMITED
 166.0.244.206,2053,IN,Internet Utilities NA LLC
-166.0.244.206,8443,IN,Internet Utilities NA LLC
-172.105.62.71,2443,IN,Linode
-20.235.105.146,443,IN,Microsoft Corporation
-152.70.76.104,46000,IN,Oracle Corporation
 134.195.137.107,22473,IN,ReadyDedis, LLC
-146.56.48.138,23010,IN,Oracle Corporation , Global software solutions , California , USA
-65.20.82.22,443,IN,Vultr Holdings LLC
+65.20.76.125,8443,IN,The Constant Company, LLC
+166.0.244.206,8443,IN,Internet Utilities NA LLC
+152.70.76.104,46000,IN,Oracle Corporation
 152.70.75.80,15805,IN,Oracle Corporation
+20.235.105.146,443,IN,Microsoft Corporation
+146.56.48.138,23010,IN,Oracle Corporation , Global software solutions , California , USA
+172.105.62.71,2443,IN,Linode
 216.10.243.159,443,IN,P.D.R Solutions FZC
-65.20.76.125,8443,IN,Vultr Holdings LLC
