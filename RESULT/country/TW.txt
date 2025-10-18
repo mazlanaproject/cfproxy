@@ -1,4 +1,4 @@
 103.137.63.205,31564,TW,Pittqiao Network Information Co.,Ltd.
-60.249.114.181,21574,TW,Chunghwa Telecom Co.,Ltd.
 60.249.114.181,26398,TW,Chunghwa Telecom Co.,Ltd.
+60.249.114.181,21574,TW,Chunghwa Telecom Co.,Ltd.
 60.249.114.181,32003,TW,Chunghwa Telecom Co.,Ltd.
